@@ -11,7 +11,8 @@
     "react-dom": "^18",
     "react-konva": "^18",
     "konva": "^9",
-    "zustand": "^4"
+    "zustand": "^4",
+    "@vitejs/plugin-react": "^4"
   },
   "devDependencies": {
     "@types/react": "^18",

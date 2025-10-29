@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Stage, Layer, Group, Rect, Text } from "react-konva";
+import type { KonvaEventObject } from "konva/lib/Node";
 import { useLayoutStore } from "../store/layoutStore";
 
 const UNIT = 60;
@@ -75,8 +76,50 @@ const computeBounds = (keys: ReturnType<typeof useLayoutStore>["keys"]): Bounds 
   };
 };
 
+const useArrowKeys = (
+  enabled: boolean,
+  handler: (dx: number, dy: number) => void
+) => {
+  React.useEffect(() => {
+    if (!enabled) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      let dx = 0;
+      let dy = 0;
+
+      switch (event.key) {
+        case "ArrowUp":
+          dy = -0.25;
+          break;
+        case "ArrowDown":
+          dy = 0.25;
+          break;
+        case "ArrowLeft":
+          dx = -0.25;
+          break;
+        case "ArrowRight":
+          dx = 0.25;
+          break;
+        default:
+          return;
+      }
+
+      event.preventDefault();
+      handler(dx, dy);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [enabled, handler]);
+};
+
 export const CanvasEditor: React.FC = () => {
-  const { keys, updateKey, toggleSelect, selectedKeys, clearSelection } = useLayoutStore();
+  const { keys, updateKey, toggleSelect, selectedKeys, clearSelection, nudgeSelected } =
+    useLayoutStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tempLabel, setTempLabel] = useState("");
   const stageRef = useRef<any>(null);
@@ -110,6 +153,10 @@ export const CanvasEditor: React.FC = () => {
     stage.batchDraw();
   };
 
+  useArrowKeys(selectedKeys.length > 0 && editingId === null, (dx, dy) => {
+    nudgeSelected(dx, dy);
+  });
+
   return (
     <Stage
       ref={stageRef}
@@ -135,7 +182,15 @@ export const CanvasEditor: React.FC = () => {
               x={groupX}
               y={groupY}
               rotation={key.rotationAngle}
-              onMouseDown={(evt) => {
+              onMouseDown={(evt: KonvaEventObject<MouseEvent>) => {
+                if (evt.evt.detail !== 1) {
+                  evt.cancelBubble = true;
+                  return;
+                }
+                evt.cancelBubble = true;
+                toggleSelect(key.id);
+              }}
+              onTap={(evt) => {
                 evt.cancelBubble = true;
                 toggleSelect(key.id);
               }}
@@ -149,7 +204,8 @@ export const CanvasEditor: React.FC = () => {
                 fill={isSelected ? "#345a9a" : "#1e2a4a"}
                 stroke={isSelected ? "#9cf" : "#666"}
                 strokeWidth={1.5}
-                onDblClick={() => {
+                onDblClick={(evt: KonvaEventObject<MouseEvent>) => {
+                  evt.cancelBubble = true;
                   setEditingId(key.id);
                   setTempLabel(key.label || "");
                 }}

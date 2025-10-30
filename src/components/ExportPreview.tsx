@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useLayoutStore } from "../store/layoutStore";
-import { exportZMK, exportQMK } from "../utils/exportZMK";
+import { exportZMK, exportQMK, generateZmkKeyLines } from "../utils/exportZMK";
 
 const panelStyle: React.CSSProperties = {
   display: "flex",
@@ -52,12 +52,29 @@ const preStyle: React.CSSProperties = {
   border: "1px solid #1f2a3f",
   borderRadius: 6,
   padding: 12,
-  whiteSpace: "pre-wrap",
+  whiteSpace: "pre",
   fontFamily: "monospace",
   fontSize: 12,
   color: "#e2ecff",
   flex: 1,
   overflow: "auto",
+};
+
+const codeStyle: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 2,
+};
+
+const lineStyle: React.CSSProperties = {
+  display: "block",
+  padding: "0 6px",
+};
+
+const highlightLineStyle: React.CSSProperties = {
+  ...lineStyle,
+  background: "rgba(125, 211, 252, 0.16)",
+  borderRadius: 4,
 };
 
 const placeholderStyle: React.CSSProperties = {
@@ -93,36 +110,87 @@ export const ExportPreview: React.FC = () => {
   const { keys, unitPitch, selectedKeys } = useLayoutStore();
   const [activeTab, setActiveTab] = useState<TabKey>("zmk");
 
-  const { zmk, qmk, activeKey } = useMemo(() => {
+  const preview = useMemo(() => {
     if (!keys.length) {
-      return { zmk: "", qmk: "", activeKey: null as null | Parameters<typeof useLayoutStore.getState>["keys"][number] };
+      return {
+        zmkText: "",
+        qmkText: "",
+        zmkLines: [] as string[],
+        qmkValues: [] as string[],
+        activeKey: null as null | Parameters<typeof useLayoutStore.getState>["keys"][number],
+      };
     }
-    const preview = {
-      zmk: exportZMK(keys, unitPitch),
-      qmk: JSON.stringify(exportQMK(keys), null, 2),
-      activeKey: null as null | Parameters<typeof useLayoutStore.getState>["keys"][number],
-    };
+
+    const zmkLines = generateZmkKeyLines(keys, unitPitch);
+    const zmkText = exportZMK(keys, unitPitch);
+    const qmkObject = exportQMK(keys);
+    const qmkText = JSON.stringify(qmkObject, null, 2);
+
+    let activeKey: Parameters<typeof useLayoutStore.getState>["keys"][number] | null = null;
     if (selectedKeys.length > 0) {
-      preview.activeKey = keys.find((k) => k.id === selectedKeys[0]) ?? null;
+      activeKey = keys.find((k) => k.id === selectedKeys[0]) ?? null;
     }
-    return preview;
+
+    return {
+      zmkText,
+      qmkText,
+      zmkLines,
+      qmkValues: qmkObject.keymap,
+      activeKey,
+    };
   }, [keys, unitPitch, selectedKeys]);
 
-  const renderContent = () => {
-    if (activeTab === "zmk") {
-      return zmk ? (
-        <pre style={preStyle}>{zmk}</pre>
-      ) : (
-        <span style={placeholderStyle}>レイアウトを読み込むと表示されます。</span>
-      );
-    }
+  const selectedIndex = useMemo(
+    () => (selectedKeys.length ? keys.findIndex((k) => k.id === selectedKeys[0]) : -1),
+    [keys, selectedKeys]
+  );
 
-    return qmk ? (
-      <pre style={preStyle}>{qmk}</pre>
-    ) : (
-      <span style={placeholderStyle}>レイアウトを読み込むと表示されます。</span>
+  const getHighlightedIndices = (text: string, search: string, occurrence: number) => {
+    const lines = text.split("\n");
+    let count = 0;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (lines[i].includes(search)) {
+        if (count === occurrence) {
+          return new Set([i]);
+        }
+        count += 1;
+      }
+    }
+    return new Set<number>();
+  };
+
+  const renderHighlightedPre = (text: string, highlightSet: Set<number>) => {
+    if (!text) {
+      return <span style={placeholderStyle}>レイアウトを読み込むと表示されます。</span>;
+    }
+    const lines = text.split("\n");
+    return (
+      <pre style={preStyle}>
+        <code style={codeStyle}>
+          {lines.map((line, index) => (
+            <span key={index} style={highlightSet.has(index) ? highlightLineStyle : lineStyle}>
+              {line || " "}
+            </span>
+          ))}
+        </code>
+      </pre>
     );
   };
+
+  const zmkHighlight = useMemo(() => {
+    if (selectedIndex < 0) return new Set<number>();
+    const line = preview.zmkLines[selectedIndex];
+    if (!line) return new Set<number>();
+    return getHighlightedIndices(preview.zmkText, line.trim(), selectedIndex);
+  }, [preview.zmkLines, preview.zmkText, selectedIndex]);
+
+  const qmkHighlight = useMemo(() => {
+    if (selectedIndex < 0) return new Set<number>();
+    const value = preview.qmkValues[selectedIndex];
+    if (value === undefined) return new Set<number>();
+    const pattern = `"${value}"`;
+    return getHighlightedIndices(preview.qmkText, pattern, selectedIndex);
+  }, [preview.qmkText, preview.qmkValues, selectedIndex]);
 
   return (
     <div style={panelStyle}>
@@ -139,17 +207,20 @@ export const ExportPreview: React.FC = () => {
           <h3 style={headingStyle}>{activeTab === "zmk" ? "Physical Layout (Devicetree)" : "QMK JSON"}</h3>
           <div style={keySummaryStyle}>
             <span style={keyLabelStyle}>Selected</span>
-            <span style={keyBadgeStyle(!!activeKey)}>
-              {activeKey ? activeKey.labels?.[4] || activeKey.label || "UNLABELED" : "--"}
+            <span style={keyBadgeStyle(!!preview.activeKey)}>
+              {preview.activeKey ? preview.activeKey.labels?.[4] || preview.activeKey.label || "UNLABELED" : "--"}
             </span>
-            {activeKey && (
+            {preview.activeKey && (
               <span style={keyLabelStyle}>
-                ({activeKey.x.toFixed(2)}, {activeKey.y.toFixed(2)}) / rot {activeKey.rotationAngle.toFixed(1)}°
+                ({preview.activeKey.x.toFixed(2)}, {preview.activeKey.y.toFixed(2)}) / rot{" "}
+                {preview.activeKey.rotationAngle.toFixed(1)}°
               </span>
             )}
           </div>
         </div>
-        {renderContent()}
+        {activeTab === "zmk"
+          ? renderHighlightedPre(preview.zmkText, zmkHighlight)
+          : renderHighlightedPre(preview.qmkText, qmkHighlight)}
       </div>
     </div>
   );

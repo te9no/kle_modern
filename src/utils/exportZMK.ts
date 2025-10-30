@@ -27,9 +27,9 @@ const formatAngle = (value: number, width: number) => {
   return padPositive(scaled, width);
 };
 
-export function exportZMK(keys: KLEKey[], pitchMm: number = DEFAULT_PITCH_MM): string {
+export const generateZmkKeyLines = (keys: KLEKey[], pitchMm: number = DEFAULT_PITCH_MM) => {
   const pitchRatio = pitchMm / DEFAULT_PITCH_MM;
-  const keyLines = keys.map((k) => {
+  return keys.map((k) => {
     const w = formatDimension(k.w, pitchRatio, 3);
     const h = formatDimension(k.h, pitchRatio, 3);
     const x = formatDimension(k.x, pitchRatio, 4);
@@ -37,14 +37,17 @@ export function exportZMK(keys: KLEKey[], pitchMm: number = DEFAULT_PITCH_MM): s
     const rot = formatAngle(k.rotationAngle, 7);
     const rx = formatDimension(k.rotationCenter.x, pitchRatio, 5);
     const ry = formatDimension(k.rotationCenter.y, pitchRatio, 5);
+
     return `<&key_physical_attrs ${w} ${h} ${x} ${y} ${rot} ${rx} ${ry}>`;
   });
+};
+
+export function exportZMK(keys: KLEKey[], pitchMm: number = DEFAULT_PITCH_MM): string {
+  const keyLines = generateZmkKeyLines(keys, pitchMm);
 
   const formattedKeys =
     keyLines.length > 0
-      ? keyLines
-          .map((line, index) => (index === 0 ? line : `, ${line}`))
-          .join("\n            ")
+      ? keyLines.map((content, index) => (index === 0 ? content : `, ${content}`)).join("\n            ")
       : "";
 
   return [

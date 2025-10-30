@@ -50,6 +50,7 @@ interface LayoutState {
   clearSelection: () => void;
   nudgeSelected: (dx: number, dy: number) => void;
   selectKey: (id: string) => void;
+  setSelectedKeys: (ids: string[]) => void;
   unitPitch: number;
   setUnitPitch: (pitch: number) => void;
   viewMode: "canvas" | "node";
@@ -167,6 +168,10 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
       };
     }),
   selectKey: (id) => set({ selectedKeys: [id] }),
+  setSelectedKeys: (ids) =>
+    set({
+      selectedKeys: [...new Set(ids)],
+    }),
   setUnitPitch: (pitch) =>
     set({
       unitPitch: Number.isFinite(pitch) && pitch > 0 ? pitch : DEFAULT_PITCH_MM,

@@ -61,7 +61,8 @@ const cloneKeys = (keys: KLEKey[]) => keys.map((k) => ({
 }));
 
 export const NodeEditor: React.FC = () => {
-  const { keys, selectedKeys, selectKey, clearSelection, updateKey, commitHistory, unitPitch } = useLayoutStore();
+  const { keys, selectedKeys, selectKey, setSelectedKeys, clearSelection, updateKey, commitHistory, unitPitch } =
+    useLayoutStore();
   const unitPx = useMemo(() => (BASE_UNIT_PX * unitPitch) / DEFAULT_PITCH_MM, [unitPitch]);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -102,7 +103,16 @@ export const NodeEditor: React.FC = () => {
       if (!node) return;
 
       const snapshot = cloneKeys(useLayoutStore.getState().keys);
-      selectKey(nodeId);
+      if (event.shiftKey) {
+        const current = useLayoutStore.getState().selectedKeys;
+        if (current.includes(nodeId)) {
+          setSelectedKeys(current.filter((id) => id !== nodeId));
+        } else {
+          setSelectedKeys([...current, nodeId]);
+        }
+      } else {
+        selectKey(nodeId);
+      }
       setDragging({
         id: nodeId,
         offsetX: event.clientX - node.x,
@@ -110,7 +120,7 @@ export const NodeEditor: React.FC = () => {
         snapshot,
       });
     },
-    [nodes, selectKey]
+    [nodes, selectKey, setSelectedKeys]
   );
 
   useEffect(() => {

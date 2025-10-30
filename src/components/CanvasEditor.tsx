@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Group, Rect, Text } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import { useLayoutStore, DEFAULT_PITCH_MM } from "../store/layoutStore";
@@ -148,6 +148,33 @@ const computeSnapOffset = (movingKey: KLEKey, allKeys: KLEKey[], unitPx: number)
   return best ? { x: best.dx, y: best.dy } : null;
 };
 
+const getBoundingRect = (key: KLEKey, unitPx: number, offset: Point) => {
+  const corners = getCornerPointsPx(key, unitPx);
+  const xs = corners.map((c) => c.x + offset.x);
+  const ys = corners.map((c) => c.y + offset.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+  };
+};
+
+const rectanglesIntersect = (
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number }
+) => {
+  const ax2 = a.x + a.width;
+  const ay2 = a.y + a.height;
+  const bx2 = b.x + b.width;
+  const by2 = b.y + b.height;
+  return !(a.x > bx2 || ax2 < b.x || a.y > by2 || ay2 < b.y);
+};
+
 const useArrowKeys = (enabled: boolean, handler: (dx: number, dy: number) => void) => {
   useEffect(() => {
     if (!enabled) return;
@@ -195,9 +222,19 @@ export const CanvasEditor: React.FC = () => {
     clearSelection,
     nudgeSelected,
     selectKey,
+    setSelectedKeys,
     unitPitch,
     setUnitPitch,
   } = useLayoutStore();
+
+  const [marqueeStart, setMarqueeStart] = useState<Point | null>(null);
+  const [marqueeRect, setMarqueeRect] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+  });
 
   const stageRef = useRef<any>(null);
   const labelInputRef = useRef<HTMLInputElement>(null);
@@ -215,6 +252,13 @@ export const CanvasEditor: React.FC = () => {
   const unitPx = useMemo(() => (BASE_UNIT_PX * unitPitch) / DEFAULT_PITCH_MM, [unitPitch]);
 
   const bounds = useMemo(() => computeBounds(keys as KLEKey[], unitPx), [keys, unitPx]);
+  const layerOffset = useMemo(
+    () => ({
+      x: bounds.offsetX,
+      y: bounds.offsetY,
+    }),
+    [bounds.offsetX, bounds.offsetY]
+  );
   const activeKey = useMemo(() => {
     if (selectedKeys.length === 0) return null;
     return keys.find((k) => k.id === selectedKeys[0]) ?? null;
@@ -303,6 +347,84 @@ export const CanvasEditor: React.FC = () => {
   useArrowKeys(selectedKeys.length > 0, (dx, dy) => {
     nudgeSelected(dx, dy);
   });
+
+  const getStagePointerPosition = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return null;
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return null;
+    const scale = stage.scaleX();
+    return {
+      x: (pointer.x - stage.x()) / scale,
+      y: (pointer.y - stage.y()) / scale,
+    };
+  }, []);
+
+  const clearMarquee = useCallback(() => {
+    setMarqueeStart(null);
+    setMarqueeRect({
+      visible: false,
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    });
+  }, []);
+
+  const handleStageMouseDown = useCallback(
+    (evt: KonvaEventObject<MouseEvent>) => {
+      if (evt.target !== stageRef.current) {
+        return;
+      }
+      if (!evt.evt.shiftKey) {
+        clearSelection();
+        return;
+      }
+      const point = getStagePointerPosition();
+      if (!point) return;
+      setMarqueeStart(point);
+      setMarqueeRect({
+        visible: true,
+        x: point.x,
+        y: point.y,
+        width: 0,
+        height: 0,
+      });
+    },
+    [clearSelection, getStagePointerPosition]
+  );
+
+  const handleStageMouseMove = useCallback(() => {
+    if (!marqueeStart) return;
+    const point = getStagePointerPosition();
+    if (!point) return;
+    setMarqueeRect({
+      visible: true,
+      x: Math.min(point.x, marqueeStart.x),
+      y: Math.min(point.y, marqueeStart.y),
+      width: Math.abs(point.x - marqueeStart.x),
+      height: Math.abs(point.y - marqueeStart.y),
+    });
+  }, [getStagePointerPosition, marqueeStart]);
+
+  const handleStageMouseUp = useCallback(() => {
+    if (!marqueeStart) return;
+    if (marqueeRect.width < 4 && marqueeRect.height < 4) {
+      clearMarquee();
+      return;
+    }
+    const selectionRect = {
+      x: marqueeRect.x,
+      y: marqueeRect.y,
+      width: marqueeRect.width,
+      height: marqueeRect.height,
+    };
+    const selectedIds = keys
+      .filter((key) => rectanglesIntersect(selectionRect, getBoundingRect(key, unitPx, layerOffset)))
+      .map((key) => key.id);
+    setSelectedKeys(selectedIds);
+    clearMarquee();
+  }, [clearMarquee, keys, layerOffset, marqueeRect.height, marqueeRect.width, marqueeRect.x, marqueeRect.y, marqueeStart, setSelectedKeys, unitPx]);
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -550,9 +672,12 @@ export const CanvasEditor: React.FC = () => {
           height={bounds.height}
           scaleX={INITIAL_SCALE}
           scaleY={INITIAL_SCALE}
-          draggable
+          draggable={marqueeStart === null}
           onWheel={handleWheel}
-          onMouseDown={() => clearSelection()}
+          onMouseDown={handleStageMouseDown}
+          onMouseMove={handleStageMouseMove}
+          onMouseUp={handleStageMouseUp}
+          onMouseLeave={handleStageMouseUp}
         >
           <Layer x={bounds.offsetX} y={bounds.offsetY}>
             {keys.map((key) => {
@@ -634,6 +759,19 @@ export const CanvasEditor: React.FC = () => {
                 </Group>
               );
             })}
+            {marqueeRect.visible && (
+              <Rect
+                listening={false}
+                x={marqueeRect.x - bounds.offsetX}
+                y={marqueeRect.y - bounds.offsetY}
+                width={marqueeRect.width}
+                height={marqueeRect.height}
+                stroke="#7dd3fc"
+                strokeWidth={1}
+                dash={[4, 4]}
+                fill="rgba(125, 211, 252, 0.12)"
+              />
+            )}
           </Layer>
         </Stage>
       </div>

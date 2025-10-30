@@ -6,6 +6,7 @@ export interface KLEKey {
   h: number;
   rotationCenter: { x: number; y: number };
   rotationAngle: number;
+  labels: string[];
   label?: string;
   binding?: string;
 }
@@ -65,6 +66,23 @@ const extractLabel = (item: unknown): string => {
   return "";
 };
 
+const extractLabels = (item: unknown): string[] => {
+  const labels = Array(9).fill("");
+
+  if (typeof item === "string") {
+    labels[4] = item;
+    return labels;
+  }
+
+  if (hasLabels(item)) {
+    for (let i = 0; i < Math.min(9, item.labels.length); i += 1) {
+      labels[i] = item.labels[i] ?? "";
+    }
+  }
+
+  return labels;
+};
+
 const toBinding = (label: string) => {
   const trimmed = label.trim();
   return `&kp ${trimmed || "NO"}`;
@@ -84,7 +102,8 @@ export function importKLE(raw: any[]): KLEKey[] {
       if (hasLabels(item)) {
         applyConfig(state, item);
 
-        const label = extractLabel(item);
+        const labels = extractLabels(item);
+        const label = labels[4] || extractLabel(item);
         keys.push({
           id: crypto.randomUUID(),
           x: state.x,
@@ -93,6 +112,7 @@ export function importKLE(raw: any[]): KLEKey[] {
           h: state.h,
           rotationCenter: { x: state.rx, y: state.ry },
           rotationAngle: state.r,
+          labels,
           label,
           binding: toBinding(label),
         });
@@ -104,7 +124,8 @@ export function importKLE(raw: any[]): KLEKey[] {
       }
 
       if (typeof item === "string") {
-        const label = item;
+        const labels = extractLabels(item);
+        const label = labels[4] || item;
         keys.push({
           id: crypto.randomUUID(),
           x: state.x,
@@ -113,6 +134,7 @@ export function importKLE(raw: any[]): KLEKey[] {
           h: state.h,
           rotationCenter: { x: state.rx, y: state.ry },
           rotationAngle: state.r,
+          labels,
           label,
           binding: toBinding(label),
         });

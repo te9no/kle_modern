@@ -56,5 +56,8 @@ export function exportZMK(keys: KLEKey[]): string {
 }
 
 export function exportQMK(keys: KLEKey[]): any {
-  return { layout: "CUSTOM", keymap: keys.map((k) => k.label || "KC_NO") };
+  return {
+    layout: "CUSTOM",
+    keymap: keys.map((k) => (k.labels?.[4] || k.label || "KC_NO") || "KC_NO"),
+  };
 }

@@ -13,57 +13,43 @@ const padPositive = (value: number, width: number) => {
 const formatField = (value: number, width: number) => {
   const scaled = scale(value);
   if (scaled < 0) {
-    return `(${scaled})`;
+    const formatted = `(-${Math.abs(scaled)})`;
+    return formatted.padStart(Math.max(width, formatted.length), " ");
   }
   return padPositive(scaled, width);
 };
 
 export function exportZMK(keys: KLEKey[]): string {
-  const bindings = keys.map((k) => k.binding || `&kp ${k.label || "NO"}`).join(" ");
+  const keyLines = keys.map((k) => {
+    const w = formatField(k.w, 3);
+    const h = formatField(k.h, 3);
+    const x = formatField(k.x, 4);
+    const y = formatField(k.y, 4);
+    const rot = formatField(k.rotationAngle, 7);
+    const rx = formatField(k.rotationCenter.x, 5);
+    const ry = formatField(k.rotationCenter.y, 5);
+    return `<&key_physical_attrs ${w} ${h} ${x} ${y} ${rot} ${rx} ${ry}>`;
+  });
 
-  const keyLines = keys
-    .map((k) => {
-      const w = formatField(k.w, 3);
-      const h = formatField(k.h, 3);
-      const x = formatField(k.x, 4);
-      const y = formatField(k.y, 4);
-      const rot = formatField(k.rotationAngle, 7);
-      const rx = formatField(k.rotationCenter.x, 5);
-      const ry = formatField(k.rotationCenter.y, 5);
-      return `<&key_physical_attrs ${w} ${h} ${x} ${y} ${rot} ${rx} ${ry}>`;
-    })
-    .join("\n            , ");
-
-  const positions = keys.map((_, index) => index).join(" ");
+  const formattedKeys =
+    keyLines.length > 0
+      ? keyLines
+          .map((line, index) => (index === 0 ? line : `, ${line}`))
+          .join("\n            ")
+      : "";
 
   return [
     "#include <dt-bindings/zmk/matrix_transform.h>",
     "#include <physical_layouts.dtsi>",
     "",
     "/ {",
-    "    keymap {",
-    '        compatible = "zmk,keymap";',
-    "        default_layer {",
-    `            bindings = <${bindings}>;`,
-    "        };",
-    "        physical_layout = <&imported_layout>;",
-    "    };",
-    "",
     "    imported_layout: imported_layout {",
     '        compatible = "zmk,physical-layout";',
     '        display-name = "Imported Layout";',
     "        keys  //                     w   h    x    y     rot    rx    ry",
     "            = <",
-    `            ${keyLines}`,
+    formattedKeys ? `            ${formattedKeys}` : "            ",
     "            >;",
-    "    };",
-    "",
-    "    position_map {",
-    '        compatible = "zmk,physical-layout-position-map";',
-    "        map_0: map_0 {",
-    "            physical-layout = <&imported_layout>;",
-    `            positions = <${positions}>;`,
-    "        };",
     "    };",
     "};",
   ].join("\n");

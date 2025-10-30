@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Group, Rect, Text } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
-import { useLayoutStore } from "../store/layoutStore";
+import { useLayoutStore, DEFAULT_PITCH_MM } from "../store/layoutStore";
 import type { KLEKey } from "../store/layoutStore";
 
-const UNIT = 60;
+const BASE_UNIT_PX = 60;
 const INITIAL_SCALE = 0.6;
 const STAGE_WIDTH = 2000;
 const STAGE_HEIGHT = 1200;
@@ -20,7 +20,7 @@ interface Bounds {
   offsetY: number;
 }
 
-const computeBounds = (keys: ReturnType<typeof useLayoutStore>["keys"]): Bounds => {
+const computeBounds = (keys: KLEKey[], unitPx: number): Bounds => {
   if (keys.length === 0) {
     return {
       width: STAGE_WIDTH,
@@ -34,13 +34,13 @@ const computeBounds = (keys: ReturnType<typeof useLayoutStore>["keys"]): Bounds 
   const ys: number[] = [];
 
   for (const key of keys) {
-    const baseX = key.x * UNIT;
-    const baseY = key.y * UNIT;
-    const width = key.w * UNIT;
-    const height = key.h * UNIT;
+    const baseX = key.x * unitPx;
+    const baseY = key.y * unitPx;
+    const width = key.w * unitPx;
+    const height = key.h * unitPx;
 
-    const originX = key.rotationCenter.x * UNIT;
-    const originY = key.rotationCenter.y * UNIT;
+    const originX = key.rotationCenter.x * unitPx;
+    const originY = key.rotationCenter.y * unitPx;
     const angle = (key.rotationAngle * Math.PI) / 180;
 
     const corners = [
@@ -96,13 +96,13 @@ const createLabelArray = (key?: Partial<KLEKey>): string[] => {
 
 const deg2rad = (deg: number) => (deg * Math.PI) / 180;
 
-const getCornerPointsPx = (key: KLEKey): Point[] => {
-  const centerX = key.rotationCenter.x * UNIT;
-  const centerY = key.rotationCenter.y * UNIT;
-  const baseX = key.x * UNIT;
-  const baseY = key.y * UNIT;
-  const width = key.w * UNIT;
-  const height = key.h * UNIT;
+const getCornerPointsPx = (key: KLEKey, unitPx: number): Point[] => {
+  const centerX = key.rotationCenter.x * unitPx;
+  const centerY = key.rotationCenter.y * unitPx;
+  const baseX = key.x * unitPx;
+  const baseY = key.y * unitPx;
+  const width = key.w * unitPx;
+  const height = key.h * unitPx;
   const rad = deg2rad(key.rotationAngle);
   const sin = Math.sin(rad);
   const cos = Math.cos(rad);
@@ -124,13 +124,13 @@ const getCornerPointsPx = (key: KLEKey): Point[] => {
   });
 };
 
-const computeSnapOffset = (movingKey: KLEKey, allKeys: KLEKey[]): Point | null => {
-  const movingCorners = getCornerPointsPx(movingKey);
+const computeSnapOffset = (movingKey: KLEKey, allKeys: KLEKey[], unitPx: number): Point | null => {
+  const movingCorners = getCornerPointsPx(movingKey, unitPx);
   let best: { dx: number; dy: number; distance: number } | null = null;
 
   for (const other of allKeys) {
     if (other.id === movingKey.id) continue;
-    const otherCorners = getCornerPointsPx(other);
+    const otherCorners = getCornerPointsPx(other, unitPx);
     for (const movingCorner of movingCorners) {
       for (const targetCorner of otherCorners) {
         const dx = targetCorner.x - movingCorner.x;
@@ -195,6 +195,8 @@ export const CanvasEditor: React.FC = () => {
     clearSelection,
     nudgeSelected,
     selectKey,
+    unitPitch,
+    setUnitPitch,
   } = useLayoutStore();
 
   const stageRef = useRef<any>(null);
@@ -210,7 +212,9 @@ export const CanvasEditor: React.FC = () => {
   const [annotationStart, setAnnotationStart] = useState(1);
   const [annotationDigits, setAnnotationDigits] = useState(2);
 
-  const bounds = useMemo(() => computeBounds(keys), [keys]);
+  const unitPx = useMemo(() => (BASE_UNIT_PX * unitPitch) / DEFAULT_PITCH_MM, [unitPitch]);
+
+  const bounds = useMemo(() => computeBounds(keys as KLEKey[], unitPx), [keys, unitPx]);
   const activeKey = useMemo(() => {
     if (selectedKeys.length === 0) return null;
     return keys.find((k) => k.id === selectedKeys[0]) ?? null;
@@ -310,6 +314,12 @@ export const CanvasEditor: React.FC = () => {
     fontSize: 14,
   };
 
+  const compactInputStyle: React.CSSProperties = {
+    ...inputStyle,
+    width: 90,
+    padding: "4px 6px",
+  };
+
   const labelWrapperStyle: React.CSSProperties = {
     display: "flex",
     flexDirection: "column",
@@ -396,6 +406,14 @@ export const CanvasEditor: React.FC = () => {
     selectKey(nextKey.id);
   };
 
+  const handlePitchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(event.target.value);
+    if (Number.isNaN(value) || value <= 0) {
+      return;
+    }
+    setUnitPitch(value);
+  };
+
   const handleDragMove = (evt: KonvaEventObject<DragEvent>, keyId: string) => {
     const node = evt.target;
     const state = useLayoutStore.getState();
@@ -404,8 +422,8 @@ export const CanvasEditor: React.FC = () => {
 
     let centerX = node.x();
     let centerY = node.y();
-    let centerUnitsX = centerX / UNIT;
-    let centerUnitsY = centerY / UNIT;
+    let centerUnitsX = centerX / unitPx;
+    let centerUnitsY = centerY / unitPx;
 
     const deltaX = centerUnitsX - current.rotationCenter.x;
     const deltaY = centerUnitsY - current.rotationCenter.y;
@@ -419,13 +437,13 @@ export const CanvasEditor: React.FC = () => {
       rotationCenter: { x: centerUnitsX, y: centerUnitsY },
     };
 
-    const snapOffset = computeSnapOffset(draftKey, state.keys);
+    const snapOffset = computeSnapOffset(draftKey, state.keys as KLEKey[], unitPx);
     if (snapOffset) {
       centerX += snapOffset.x;
       centerY += snapOffset.y;
       node.position({ x: centerX, y: centerY });
-      centerUnitsX = centerX / UNIT;
-      centerUnitsY = centerY / UNIT;
+      centerUnitsX = centerX / unitPx;
+      centerUnitsY = centerY / unitPx;
 
       const snapDeltaX = centerUnitsX - current.rotationCenter.x;
       const snapDeltaY = centerUnitsY - current.rotationCenter.y;
@@ -499,9 +517,7 @@ export const CanvasEditor: React.FC = () => {
 
   const applyAnnotation = () => {
     if (selectedKeyObjects.length === 0) return;
-    const sorted = [...selectedKeyObjects].sort(
-      (a, b) => a.y - b.y || a.x - b.x
-    );
+    const sorted = [...selectedKeyObjects].sort((a, b) => a.x - b.x || a.y - b.y);
     sorted.forEach((key, index) => {
       const labelValue = `${annotationPrefix}${String(annotationStart + index).padStart(annotationDigits, "0")}`;
       const labels = createLabelArray(key);
@@ -541,18 +557,18 @@ export const CanvasEditor: React.FC = () => {
           <Layer x={bounds.offsetX} y={bounds.offsetY}>
             {keys.map((key) => {
               const isSelected = selectedKeys.includes(key.id);
-              const groupX = key.rotationCenter.x * UNIT;
-              const groupY = key.rotationCenter.y * UNIT;
-              const rectX = (key.x - key.rotationCenter.x) * UNIT;
-              const rectY = (key.y - key.rotationCenter.y) * UNIT;
+              const groupX = key.rotationCenter.x * unitPx;
+              const groupY = key.rotationCenter.y * unitPx;
+              const rectX = (key.x - key.rotationCenter.x) * unitPx;
+              const rectY = (key.y - key.rotationCenter.y) * unitPx;
               const legends = createLabelArray(key);
               const padding = 6;
-              const textWidth = key.w * UNIT - padding * 2;
+              const textWidth = key.w * unitPx - padding * 2;
               const fontSize = 14;
               const verticalPositions = [
                 rectY + padding,
-                rectY + key.h * UNIT / 2 - fontSize / 2,
-                rectY + key.h * UNIT - padding - fontSize,
+                rectY + (key.h * unitPx) / 2 - fontSize / 2,
+                rectY + key.h * unitPx - padding - fontSize,
               ];
               const alignments: ("left" | "center" | "right")[] = ["left", "center", "right"];
 
@@ -585,8 +601,8 @@ export const CanvasEditor: React.FC = () => {
                   <Rect
                     x={rectX}
                     y={rectY}
-                    width={key.w * UNIT}
-                    height={key.h * UNIT}
+                    width={key.w * unitPx}
+                    height={key.h * unitPx}
                     cornerRadius={4}
                     fill={isSelected ? "#345a9a" : "#1e2a4a"}
                     stroke={isSelected ? "#9cf" : "#666"}
@@ -628,8 +644,27 @@ export const CanvasEditor: React.FC = () => {
           padding: "12px 16px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 12, gap: 16 }}>
           <strong style={{ color: "#cde0ff" }}>Inspector</strong>
+          <label
+            style={{
+              color: "#94a3b8",
+              fontSize: 12,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            Pitch (mm)
+            <input
+              type="number"
+              step="0.1"
+              min="10"
+              value={unitPitch}
+              onChange={handlePitchChange}
+              style={compactInputStyle}
+            />
+          </label>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <button
               type="button"

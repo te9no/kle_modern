@@ -1,6 +1,5 @@
 import type { KLEKey } from "./importKLE";
-
-const scale = (value: number) => Math.round(value * 100);
+import { DEFAULT_PITCH_MM } from "../store/layoutStore";
 
 const padPositive = (value: number, width: number) => {
   const str = value.toString();
@@ -10,8 +9,8 @@ const padPositive = (value: number, width: number) => {
   return `${" ".repeat(width - str.length)}${str}`;
 };
 
-const formatField = (value: number, width: number) => {
-  const scaled = scale(value);
+const formatDimension = (value: number, pitchRatio: number, width: number) => {
+  const scaled = Math.round(value * 100 * pitchRatio);
   if (scaled < 0) {
     const formatted = `(-${Math.abs(scaled)})`;
     return formatted.padStart(Math.max(width, formatted.length), " ");
@@ -19,15 +18,25 @@ const formatField = (value: number, width: number) => {
   return padPositive(scaled, width);
 };
 
-export function exportZMK(keys: KLEKey[]): string {
+const formatAngle = (value: number, width: number) => {
+  const scaled = Math.round(value * 100);
+  if (scaled < 0) {
+    const formatted = `(-${Math.abs(scaled)})`;
+    return formatted.padStart(Math.max(width, formatted.length), " ");
+  }
+  return padPositive(scaled, width);
+};
+
+export function exportZMK(keys: KLEKey[], pitchMm: number = DEFAULT_PITCH_MM): string {
+  const pitchRatio = pitchMm / DEFAULT_PITCH_MM;
   const keyLines = keys.map((k) => {
-    const w = formatField(k.w, 3);
-    const h = formatField(k.h, 3);
-    const x = formatField(k.x, 4);
-    const y = formatField(k.y, 4);
-    const rot = formatField(k.rotationAngle, 7);
-    const rx = formatField(k.rotationCenter.x, 5);
-    const ry = formatField(k.rotationCenter.y, 5);
+    const w = formatDimension(k.w, pitchRatio, 3);
+    const h = formatDimension(k.h, pitchRatio, 3);
+    const x = formatDimension(k.x, pitchRatio, 4);
+    const y = formatDimension(k.y, pitchRatio, 4);
+    const rot = formatAngle(k.rotationAngle, 7);
+    const rx = formatDimension(k.rotationCenter.x, pitchRatio, 5);
+    const ry = formatDimension(k.rotationCenter.y, pitchRatio, 5);
     return `<&key_physical_attrs ${w} ${h} ${x} ${y} ${rot} ${rx} ${ry}>`;
   });
 

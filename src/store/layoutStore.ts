@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+
+export const DEFAULT_PITCH_MM = 19.05;
+
 export interface KLEKey { id:string;x:number;y:number;w:number;h:number;rotationCenter:{x:number;y:number};rotationAngle:number;labels:string[];label?:string;binding?:string; }
 
 const ensureLabels = (key: KLEKey): KLEKey => {
@@ -25,11 +28,14 @@ interface LayoutState {
   clearSelection: () => void;
   nudgeSelected: (dx: number, dy: number) => void;
   selectKey: (id: string) => void;
+  unitPitch: number;
+  setUnitPitch: (pitch: number) => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
   keys: [],
   selectedKeys: [],
+  unitPitch: DEFAULT_PITCH_MM,
   setKeys: (keys) => set({ keys: keys.map(ensureLabels), selectedKeys: [] }),
   updateKey: (id, patch) =>
     set((s) => ({
@@ -63,8 +69,12 @@ export const useLayoutStore = create<LayoutState>((set) => ({
                 y: k.rotationCenter.y + dy,
               },
             }
-          : k
+        : k
       ),
     })),
   selectKey: (id) => set({ selectedKeys: [id] }),
+  setUnitPitch: (pitch) =>
+    set({
+      unitPitch: Number.isFinite(pitch) && pitch > 0 ? pitch : DEFAULT_PITCH_MM,
+    }),
 }));

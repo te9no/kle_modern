@@ -4,7 +4,7 @@ import{importKLE}from'../utils/importKLE';
 import{exportZMK,exportQMK}from'../utils/exportZMK';
 
 export const Toolbar:React.FC=()=>{
-  const{setKeys,rotateSelected,keys,unitPitch}=useLayoutStore();
+  const{setKeys,rotateSelected,keys,unitPitch,viewMode,setViewMode}=useLayoutStore();
   const importFile=(f:File)=>{const r=new FileReader();r.onload=()=>{try{setKeys(importKLE(JSON.parse(r.result as string)));}catch{alert('Invalid KLE JSON');}};r.readAsText(f);};
   const onImport=(e:React.ChangeEvent<HTMLInputElement>)=>{if(e.target.files?.[0])importFile(e.target.files[0]);};
   const onDrop=useCallback((e:React.DragEvent<HTMLDivElement>)=>{e.preventDefault();if(e.dataTransfer.files?.[0])importFile(e.dataTransfer.files[0]);},[]);
@@ -14,6 +14,9 @@ export const Toolbar:React.FC=()=>{
     <button onClick={()=>rotateSelected(15)}>Rotate +15°</button>
     <button onClick={()=>download('layout.keymap',exportZMK(keys,unitPitch),'text/plain')}>Export ZMK</button>
     <button onClick={()=>download('layout_qmk.json',JSON.stringify(exportQMK(keys),null,2),'application/json')}>Export QMK</button>
+    <button onClick={()=>setViewMode(viewMode==='canvas'?'node':'canvas')}>
+      {viewMode==='canvas'?'Show Node Editor':'Show Canvas Editor'}
+    </button>
     <span style={{marginLeft:'auto',opacity:0.7}}>💡 KLE JSONをドラッグ＆ドロップでインポート</span>
   </div>);
 };

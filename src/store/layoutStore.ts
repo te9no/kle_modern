@@ -30,12 +30,15 @@ interface LayoutState {
   selectKey: (id: string) => void;
   unitPitch: number;
   setUnitPitch: (pitch: number) => void;
+  viewMode: "canvas" | "node";
+  setViewMode: (mode: "canvas" | "node") => void;
 }
 
 export const useLayoutStore = create<LayoutState>((set) => ({
   keys: [],
   selectedKeys: [],
   unitPitch: DEFAULT_PITCH_MM,
+  viewMode: "canvas",
   setKeys: (keys) => set({ keys: keys.map(ensureLabels), selectedKeys: [] }),
   updateKey: (id, patch) =>
     set((s) => ({
@@ -77,4 +80,5 @@ export const useLayoutStore = create<LayoutState>((set) => ({
     set({
       unitPitch: Number.isFinite(pitch) && pitch > 0 ? pitch : DEFAULT_PITCH_MM,
     }),
+  setViewMode: (mode) => set({ viewMode: mode }),
 }));

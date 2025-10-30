@@ -1,11 +1,20 @@
-import React, { useCallback } from "react";
+﻿import React, { useCallback } from "react";
 import { useLayoutStore } from "../store/layoutStore";
 import { importKLE } from "../utils/importKLE";
 import { importZMKKeymap } from "../utils/importZMKKeymap";
 import { exportZMK, exportQMK } from "../utils/exportZMK";
 
 export const Toolbar: React.FC = () => {
-  const { setKeys, rotateSelected, keys, unitPitch, viewMode, setViewMode } = useLayoutStore();
+  const {
+    setKeys,
+    rotateSelected,
+    duplicateSelected,
+    deleteSelected,
+    keys,
+    unitPitch,
+    viewMode,
+    setViewMode,
+  } = useLayoutStore();
 
   const importFile = (file: File) => {
     const reader = new FileReader();
@@ -56,7 +65,9 @@ export const Toolbar: React.FC = () => {
       onDrop={onDrop}
     >
       <input type="file" accept=".json,.keymap,.dtsi,.dts" onChange={onImport} />
-      <button onClick={() => rotateSelected(15)}>Rotate +15°</button>
+      <button onClick={() => rotateSelected(15)}>Rotate +15 deg</button>
+      <button onClick={duplicateSelected}>Duplicate</button>
+      <button onClick={deleteSelected}>Delete</button>
       <button onClick={() => download("layout.keymap", exportZMK(keys, unitPitch), "text/plain")}>
         Export ZMK
       </button>
@@ -71,7 +82,7 @@ export const Toolbar: React.FC = () => {
         {viewMode === "canvas" ? "Show Node Editor" : "Show Canvas Editor"}
       </button>
       <span style={{ marginLeft: "auto", opacity: 0.7 }}>
-        💡 KLE JSONやZMK keymapをドラッグ＆ドロップでインポートできます。
+        Tip: Drag & Drop KLE JSON or ZMK keymap to import.
       </span>
     </div>
   );

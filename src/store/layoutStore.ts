@@ -51,6 +51,8 @@ interface LayoutState {
   nudgeSelected: (dx: number, dy: number) => void;
   selectKey: (id: string) => void;
   setSelectedKeys: (ids: string[]) => void;
+  deleteSelected: () => void;
+  duplicateSelected: () => void;
   unitPitch: number;
   setUnitPitch: (pitch: number) => void;
   viewMode: "canvas" | "node";
@@ -171,6 +173,44 @@ export const useLayoutStore = create<LayoutState>((set, get) => ({
   setSelectedKeys: (ids) =>
     set({
       selectedKeys: [...new Set(ids)],
+    }),
+  deleteSelected: () =>
+    set((state) => {
+      if (!state.selectedKeys.length) return state;
+      const remaining = state.keys.filter((k) => !state.selectedKeys.includes(k.id));
+      return {
+        ...state,
+        keys: cloneKeys(remaining),
+        selectedKeys: [],
+        past: [...state.past, cloneKeys(state.keys)],
+        future: [],
+      };
+    }),
+  duplicateSelected: () =>
+    set((state) => {
+      if (!state.selectedKeys.length) return state;
+      const before = cloneKeys(state.keys);
+      const selected = state.keys.filter((k) => state.selectedKeys.includes(k.id));
+      const nextSelected: string[] = [];
+      const copied = selected.map((key) => {
+        const copy = cloneKey(key);
+        copy.id = crypto.randomUUID();
+        copy.x += 0.25;
+        copy.y += 0.25;
+        copy.rotationCenter = {
+          x: copy.rotationCenter.x + 0.25,
+          y: copy.rotationCenter.y + 0.25,
+        };
+        nextSelected.push(copy.id);
+        return copy;
+      });
+      return {
+        ...state,
+        keys: cloneKeys([...state.keys, ...copied]),
+        selectedKeys: nextSelected,
+        past: [...state.past, before],
+        future: [],
+      };
     }),
   setUnitPitch: (pitch) =>
     set({

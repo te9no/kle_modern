@@ -718,7 +718,9 @@ export const CanvasEditor: React.FC = () => {
                   }}
                   onDragStart={(evt) => {
                     evt.cancelBubble = true;
-                    selectKey(key.id);
+                    if (!evt.evt.shiftKey && !selectedKeys.includes(key.id)) {
+                      selectKey(key.id);
+                    }
                   }}
                   onDragMove={(evt) => handleDragMove(evt, key.id)}
                   onDragEnd={(evt) => handleDragEnd(evt, key.id)}

@@ -175,6 +175,14 @@ const rectanglesIntersect = (
   return !(a.x > bx2 || ax2 < b.x || a.y > by2 || ay2 < b.y);
 };
 
+const cloneKeyState = (key: KLEKey): KLEKey => ({
+  ...key,
+  rotationCenter: { ...key.rotationCenter },
+  labels: [...key.labels],
+});
+
+const cloneKeysState = (keys: KLEKey[]) => keys.map((k) => cloneKeyState(k));
+
 const useArrowKeys = (enabled: boolean, handler: (dx: number, dy: number) => void) => {
   useEffect(() => {
     if (!enabled) return;
@@ -225,6 +233,7 @@ export const CanvasEditor: React.FC = () => {
     setSelectedKeys,
     unitPitch,
     setUnitPitch,
+    commitHistory,
   } = useLayoutStore();
 
   const [marqueeStart, setMarqueeStart] = useState<Point | null>(null);
@@ -238,6 +247,7 @@ export const CanvasEditor: React.FC = () => {
 
   const stageRef = useRef<any>(null);
   const labelInputRef = useRef<HTMLInputElement>(null);
+  const dragSnapshotRef = useRef<{ keys: KLEKey[]; selectedIds: string[] } | null>(null);
   const [formState, setFormState] = useState({
     labels: Array(9).fill(""),
     x: "",
@@ -538,27 +548,31 @@ export const CanvasEditor: React.FC = () => {
 
   const handleDragMove = (evt: KonvaEventObject<DragEvent>, keyId: string) => {
     const node = evt.target;
-    const state = useLayoutStore.getState();
-    const current = state.keys.find((k) => k.id === keyId);
-    if (!current) return;
+    const snapshot = dragSnapshotRef.current;
+    const baseKeys = snapshot?.keys ?? cloneKeysState(useLayoutStore.getState().keys as KLEKey[]);
+    const baseKey = baseKeys.find((k) => k.id === keyId);
+    if (!baseKey) return;
 
     let centerX = node.x();
     let centerY = node.y();
     let centerUnitsX = centerX / unitPx;
     let centerUnitsY = centerY / unitPx;
 
-    const deltaX = centerUnitsX - current.rotationCenter.x;
-    const deltaY = centerUnitsY - current.rotationCenter.y;
-    let newX = current.x + deltaX;
-    let newY = current.y + deltaY;
+    let deltaX = centerUnitsX - baseKey.rotationCenter.x;
+    let deltaY = centerUnitsY - baseKey.rotationCenter.y;
 
     let draftKey: KLEKey = {
-      ...current,
-      x: newX,
-      y: newY,
-      rotationCenter: { x: centerUnitsX, y: centerUnitsY },
+      ...baseKey,
+      x: baseKey.x + deltaX,
+      y: baseKey.y + deltaY,
+      rotationCenter: {
+        x: baseKey.rotationCenter.x + deltaX,
+        y: baseKey.rotationCenter.y + deltaY,
+      },
+      labels: [...baseKey.labels],
     };
 
+    const state = useLayoutStore.getState();
     const snapOffset = computeSnapOffset(draftKey, state.keys as KLEKey[], unitPx);
     if (snapOffset) {
       centerX += snapOffset.x;
@@ -566,30 +580,50 @@ export const CanvasEditor: React.FC = () => {
       node.position({ x: centerX, y: centerY });
       centerUnitsX = centerX / unitPx;
       centerUnitsY = centerY / unitPx;
-
-      const snapDeltaX = centerUnitsX - current.rotationCenter.x;
-      const snapDeltaY = centerUnitsY - current.rotationCenter.y;
-
-      newX = current.x + snapDeltaX;
-      newY = current.y + snapDeltaY;
-
-      draftKey = {
-        ...draftKey,
-        x: newX,
-        y: newY,
-        rotationCenter: { x: centerUnitsX, y: centerUnitsY },
-      };
+      deltaX = centerUnitsX - baseKey.rotationCenter.x;
+      deltaY = centerUnitsY - baseKey.rotationCenter.y;
     }
 
-    updateKey(keyId, {
-      x: draftKey.x,
-      y: draftKey.y,
-      rotationCenter: draftKey.rotationCenter,
+    const idsToMove =
+      snapshot && snapshot.selectedIds.length ? snapshot.selectedIds : [keyId];
+    const baseMap = new Map(baseKeys.map((k) => [k.id, k]));
+    idsToMove.forEach((id) => {
+      const original = baseMap.get(id);
+      if (!original) return;
+      updateKey(
+        id,
+        {
+          x: original.x + deltaX,
+          y: original.y + deltaY,
+          rotationCenter: {
+            x: original.rotationCenter.x + deltaX,
+            y: original.rotationCenter.y + deltaY,
+          },
+        },
+        { skipHistory: true }
+      );
     });
   };
 
   const handleDragEnd = (evt: KonvaEventObject<DragEvent>, keyId: string) => {
     handleDragMove(evt, keyId);
+    const snapshot = dragSnapshotRef.current;
+    if (!snapshot) return;
+    const baseKey = snapshot.keys.find((k) => k.id === keyId);
+    const currentKey = useLayoutStore
+      .getState()
+      .keys.find((k) => k.id === keyId);
+    if (
+      baseKey &&
+      currentKey &&
+      (currentKey.x !== baseKey.x ||
+        currentKey.y !== baseKey.y ||
+        currentKey.rotationCenter.x !== baseKey.rotationCenter.x ||
+        currentKey.rotationCenter.y !== baseKey.rotationCenter.y)
+    ) {
+      commitHistory(snapshot.keys);
+    }
+    dragSnapshotRef.current = null;
   };
 
   const buttonStyle: React.CSSProperties = {
@@ -718,9 +752,16 @@ export const CanvasEditor: React.FC = () => {
                   }}
                   onDragStart={(evt) => {
                     evt.cancelBubble = true;
-                    if (!evt.evt.shiftKey && !selectedKeys.includes(key.id)) {
+                    const stateBefore = useLayoutStore.getState();
+                    let selection = stateBefore.selectedKeys;
+                    if (!selection.includes(key.id)) {
                       selectKey(key.id);
+                      selection = [key.id];
                     }
+                    dragSnapshotRef.current = {
+                      keys: cloneKeysState(stateBefore.keys as KLEKey[]),
+                      selectedIds: [...selection],
+                    };
                   }}
                   onDragMove={(evt) => handleDragMove(evt, key.id)}
                   onDragEnd={(evt) => handleDragEnd(evt, key.id)}

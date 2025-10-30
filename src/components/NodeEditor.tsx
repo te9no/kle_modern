@@ -8,6 +8,7 @@ type DragState = {
   offsetX: number;
   offsetY: number;
   snapshot: KLEKey[];
+  selectedIds: string[];
 };
 
 const containerStyle: React.CSSProperties = {
@@ -102,22 +103,26 @@ export const NodeEditor: React.FC = () => {
       const node = nodes.find((n) => n.id === nodeId);
       if (!node) return;
 
-      const snapshot = cloneKeys(useLayoutStore.getState().keys);
+      const state = useLayoutStore.getState();
+      let selection = state.selectedKeys;
       if (event.shiftKey) {
-        const current = useLayoutStore.getState().selectedKeys;
-        if (current.includes(nodeId)) {
-          setSelectedKeys(current.filter((id) => id !== nodeId));
+        if (selection.includes(nodeId)) {
+          selection = selection.filter((id) => id !== nodeId);
         } else {
-          setSelectedKeys([...current, nodeId]);
+          selection = [...selection, nodeId];
         }
-      } else {
+        setSelectedKeys(selection);
+      } else if (!selection.includes(nodeId)) {
         selectKey(nodeId);
+        selection = [nodeId];
       }
+
       setDragging({
         id: nodeId,
         offsetX: event.clientX - node.x,
         offsetY: event.clientY - node.y,
-        snapshot,
+        snapshot: cloneKeys(state.keys),
+        selectedIds: [...selection],
       });
     },
     [nodes, selectKey, setSelectedKeys]
@@ -135,28 +140,35 @@ export const NodeEditor: React.FC = () => {
       const yPx = event.clientY - dragging.offsetY;
       const centerX = xPx / unitPx;
       const centerY = yPx / unitPx;
-      const currentKeys = useLayoutStore.getState().keys;
-      const key = currentKeys.find((k) => k.id === dragging.id);
-      if (!key) return;
-      const deltaX = centerX - key.rotationCenter.x;
-      const deltaY = centerY - key.rotationCenter.y;
-      updateKey(
-        dragging.id,
-        {
-          x: key.x + deltaX,
-          y: key.y + deltaY,
-          rotationCenter: {
-            x: centerX,
-            y: centerY,
+      const baseKey = dragging.snapshot.find((k) => k.id === dragging.id);
+      if (!baseKey) return;
+      const deltaX = centerX - baseKey.rotationCenter.x;
+      const deltaY = centerY - baseKey.rotationCenter.y;
+
+      const baseMap = new Map(dragging.snapshot.map((k) => [k.id, k]));
+      const idsToMove =
+        dragging.selectedIds && dragging.selectedIds.length ? dragging.selectedIds : [dragging.id];
+
+      idsToMove.forEach((id) => {
+        const original = baseMap.get(id);
+        if (!original) return;
+        updateKey(
+          id,
+          {
+            x: original.x + deltaX,
+            y: original.y + deltaY,
+            rotationCenter: {
+              x: original.rotationCenter.x + deltaX,
+              y: original.rotationCenter.y + deltaY,
+            },
           },
-        },
-        { skipHistory: true }
-      );
+          { skipHistory: true }
+        );
+      });
     };
 
     const handlePointerUp = () => {
-      const currentState = useLayoutStore.getState();
-      const currentKey = currentState.keys.find((k) => k.id === dragging.id);
+      const currentKey = useLayoutStore.getState().keys.find((k) => k.id === dragging.id);
       const originalKey = dragging.snapshot.find((k) => k.id === dragging.id);
       if (
         currentKey &&
@@ -180,7 +192,7 @@ export const NodeEditor: React.FC = () => {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [dragging, keys, unitPx, updateKey]);
+  }, [dragging, unitPx, updateKey, commitHistory]);
 
   const handleBackgroundClick = (event: React.MouseEvent<HTMLDivElement>) => {
     if (event.target === containerRef.current) {
